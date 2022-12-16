@@ -1,0 +1,135 @@
+"""
+Model exported as python.
+Name : DGTP - Workflow
+Group : 
+With QGIS : 32601
+"""
+
+from qgis.core import QgsProcessing
+from qgis.core import QgsProcessingAlgorithm
+from qgis.core import QgsProcessingMultiStepFeedback
+from qgis.core import QgsProcessingParameterFile
+from qgis.core import QgsProcessingParameterNumber
+from qgis.core import QgsProcessingParameterExtent
+from qgis.core import QgsProcessingParameterVectorLayer
+from qgis.core import QgsProcessingParameterRasterDestination
+from qgis.core import QgsProcessingParameterVectorDestination
+import processing
+
+
+class DgtpWorkflow(QgsProcessingAlgorithm):
+
+    def initAlgorithm(self, config=None):
+        self.addParameter(QgsProcessingParameterFile('contour_layer_styles', 'Contour Layer styles', behavior=QgsProcessingParameterFile.File, fileFilter='All Files (*.*)', defaultValue=None))
+        self.addParameter(QgsProcessingParameterNumber('contour_line_interval', 'Contour line interval', type=QgsProcessingParameterNumber.Double, minValue=0.01, maxValue=100, defaultValue=1))
+        self.addParameter(QgsProcessingParameterNumber('distance_coefficient_p', 'Distance coefficient P', type=QgsProcessingParameterNumber.Double, minValue=1, maxValue=100, defaultValue=5))
+        self.addParameter(QgsProcessingParameterExtent('idw_extents__boundary', 'IDW Extents - Boundary', defaultValue='0.000000000,0.000000000,0.000000000,0.000000000 [EPSG:32651]'))
+        self.addParameter(QgsProcessingParameterVectorLayer('mask_layer_for_clipping', 'Mask Layer for clipping', types=[QgsProcessing.TypeVectorLine,QgsProcessing.TypeVectorPolygon], defaultValue=None))
+        self.addParameter(QgsProcessingParameterNumber('offset_from_zero', 'Offset from Zero', type=QgsProcessingParameterNumber.Double, minValue=0, maxValue=100, defaultValue=0))
+        self.addParameter(QgsProcessingParameterFile('raster_layer_styles', 'Raster Layer Styles', behavior=QgsProcessingParameterFile.File, fileFilter='All Files (*.*)', defaultValue=None))
+        self.addParameter(QgsProcessingParameterRasterDestination('ClippedIdwResult', 'Clipped IDW Result', createByDefault=True, defaultValue=''))
+        self.addParameter(QgsProcessingParameterVectorDestination('IdwContoursResult', 'IDW Contours Result', type=QgsProcessing.TypeVectorLine, createByDefault=True, defaultValue=''))
+        self.addParameter(QgsProcessingParameterRasterDestination('IdwResult', 'IDW Result', createByDefault=True, defaultValue=''))
+
+    def processAlgorithm(self, parameters, context, model_feedback):
+        # Use a multi-step feedback, so that individual child algorithm progress reports are adjusted for the
+        # overall progress through the model
+        feedback = QgsProcessingMultiStepFeedback(5, model_feedback)
+        results = {}
+        outputs = {}
+
+        # IDW interpolation
+        alg_params = {
+            'DISTANCE_COEFFICIENT': parameters['distance_coefficient_p'],
+            'EXTENT': parameters['idw_extents__boundary'],
+            'INTERPOLATION_DATA': 'C:/Users/921604/Royal HaskoningDHV/SF1179 Global City Mandaue - WIP - WIP/05_BIM/05 GIS/01 shape file/16 Geotechnical Interpretations/SF1179 Site Classification.shp::~::0::~::4::~::0',
+            'PIXEL_SIZE': 1,
+            'OUTPUT': parameters['IdwResult']
+        }
+        outputs['IdwInterpolation'] = processing.run('qgis:idwinterpolation', alg_params, context=context, feedback=feedback, is_child_algorithm=True)
+        results['IdwResult'] = outputs['IdwInterpolation']['OUTPUT']
+
+        feedback.setCurrentStep(1)
+        if feedback.isCanceled():
+            return {}
+
+        # Clip IDW raster
+        alg_params = {
+            'ALPHA_BAND': False,
+            'CROP_TO_CUTLINE': True,
+            'DATA_TYPE': 0,  # Use Input Layer Data Type
+            'EXTRA': '',
+            'INPUT': outputs['IdwInterpolation']['OUTPUT'],
+            'KEEP_RESOLUTION': True,
+            'MASK': parameters['mask_layer_for_clipping'],
+            'MULTITHREADING': False,
+            'NODATA': None,
+            'OPTIONS': '',
+            'SET_RESOLUTION': False,
+            'SOURCE_CRS': None,
+            'TARGET_CRS': None,
+            'TARGET_EXTENT': None,
+            'X_RESOLUTION': None,
+            'Y_RESOLUTION': None,
+            'OUTPUT': parameters['ClippedIdwResult']
+        }
+        outputs['ClipIdwRaster'] = processing.run('gdal:cliprasterbymasklayer', alg_params, context=context, feedback=feedback, is_child_algorithm=True)
+        results['ClippedIdwResult'] = outputs['ClipIdwRaster']['OUTPUT']
+
+        feedback.setCurrentStep(2)
+        if feedback.isCanceled():
+            return {}
+
+        # Creates contour from clipped IDW raster
+        alg_params = {
+            'BAND': 1,
+            'CREATE_3D': False,
+            'EXTRA': '',
+            'FIELD_NAME': 'ELEV',
+            'IGNORE_NODATA': False,
+            'INPUT': outputs['ClipIdwRaster']['OUTPUT'],
+            'INTERVAL': parameters['contour_line_interval'],
+            'NODATA': None,
+            'OFFSET': parameters['offset_from_zero'],
+            'OUTPUT': parameters['IdwContoursResult']
+        }
+        outputs['CreatesContourFromClippedIdwRaster'] = processing.run('gdal:contour', alg_params, context=context, feedback=feedback, is_child_algorithm=True)
+        results['IdwContoursResult'] = outputs['CreatesContourFromClippedIdwRaster']['OUTPUT']
+
+        feedback.setCurrentStep(3)
+        if feedback.isCanceled():
+            return {}
+
+        # Contour Layer Styles
+        alg_params = {
+            'INPUT': outputs['CreatesContourFromClippedIdwRaster']['OUTPUT'],
+            'STYLE': parameters['contour_layer_styles']
+        }
+        outputs['ContourLayerStyles'] = processing.run('native:setlayerstyle', alg_params, context=context, feedback=feedback, is_child_algorithm=True)
+
+        feedback.setCurrentStep(4)
+        if feedback.isCanceled():
+            return {}
+
+        # Raster Layer Styles
+        alg_params = {
+            'INPUT': outputs['ClipIdwRaster']['OUTPUT'],
+            'STYLE': parameters['raster_layer_styles']
+        }
+        outputs['RasterLayerStyles'] = processing.run('native:setlayerstyle', alg_params, context=context, feedback=feedback, is_child_algorithm=True)
+        return results
+
+    def name(self):
+        return 'DGTP - Workflow'
+
+    def displayName(self):
+        return 'DGTP - Workflow'
+
+    def group(self):
+        return ''
+
+    def groupId(self):
+        return ''
+
+    def createInstance(self):
+        return DgtpWorkflow()

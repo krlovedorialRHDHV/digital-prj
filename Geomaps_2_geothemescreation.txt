@@ -1,0 +1,54 @@
+root = QgsProject.instance().layerTreeRoot()
+mapThemesCollection = QgsProject.instance().mapThemeCollection()
+mapThemes = mapThemesCollection.mapThemes()
+GeoThemeNames = ['trial'] # Replace with your list of raster layers instead
+
+# Always visible layer
+GeoBasemap = QgsProject.instance().mapLayersByName('Esri Gray (light)')[0]
+GeoBoreholes = QgsProject.instance().mapLayersByName('SF1179 GMC Spatial distribution P01')[0]
+GeoIslandBoundaries = QgsProject.instance().mapLayersByName('SF1179-NEW-ISLAND-BOUNDARY')[0]
+
+# Turn off layers within group
+def get_group_layers(group):
+   group.setItemVisibilityChecked(True)
+   for child in group.children():
+      if isinstance(child, QgsLayerTreeGroup):
+         # Recursive call to get nested groups
+         get_group_layers(child)
+      else:
+         child.setItemVisibilityChecked(False)
+
+for child in root.children():
+   if isinstance(child, QgsLayerTreeGroup):
+      child.setItemVisibilityChecked(False)
+      get_group_layers(child)
+   elif isinstance(child, QgsLayerTreeLayer):
+      child.setItemVisibilityChecked(False)
+
+
+# Turn off selected layers within group
+def turnOnLayers(IDW_Raster, IDW_Contour):
+    Raster_on = QgsProject.instance().mapLayersByName(IDW_Raster)[0]
+    Contour_on = QgsProject.instance().mapLayersByName(IDW_Contour)[0]
+    
+    root.findLayer(Raster_on).setItemVisibilityChecked(True)
+    root.findLayer(Contour_on).setItemVisibilityChecked(True)
+    root.findLayer(GeoIslandBoundaries).setItemVisibilityChecked(True)
+    root.findLayer(GeoBoreholes).setItemVisibilityChecked(True)
+    root.findLayer(GeoBasemap).setItemVisibilityChecked(True)
+    
+for Geo_themes in GeoThemeNames:
+    turnOnLayers('Liquefaction B&I_REV01', 'SF1179 LIQUEFACTION B&I CONTOUR')
+
+mapThemeRecord = QgsMapThemeCollection.createThemeFromCurrentState(
+    QgsProject.instance().layerTreeRoot(),
+    iface.layerTreeView().layerTreeModel()
+#         For QGIS 3.18+, instead of above line, use iface.layerTreeView().layerTreeModel()
+    )
+mapThemesCollection.insert('trial', mapThemeRecord)
+
+
+
+
+
+

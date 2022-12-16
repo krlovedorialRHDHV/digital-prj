@@ -1,0 +1,12 @@
+manager = QgsProject.instance().layoutManager()
+for layout in manager.printLayouts():
+    layoutname_dir = layout.name()
+    layoutname = manager.layoutByName(layout.name())
+    if layoutname != 'A3' or layoutname != 'A3-sectioning' \
+        or layoutname != 'A3-with nearby sites':
+        exporter = QgsLayoutExporter(layoutname)
+        output_dir = 'C:/temp/'+layoutname_dir+'.png'
+        exporter.exportToImage(output_dir,QgsLayoutExporter.ImageExportSettings())
+    else:
+        print(layoutname_dir)
+    
